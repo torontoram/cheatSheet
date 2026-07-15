@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Interactive Cheatsheet</title>
+    <title>My Synced DevOps Cheatsheet</title>
+    <!-- Include Supabase JS CDN Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -201,11 +203,11 @@
             </div>
         </section>
 
-        <!-- Right Column: Live Browser Notepad -->
+        <!-- Right Column: Live Synced Cloud Notepad -->
         <section>
             <div class="section-card">
                 <h2>Quick Add Notes</h2>
-                <p style="font-size: 12px; color: var(--text-muted); margin-top: -10px;">Saved to browser's LocalStorage</p>
+                <p id="status" style="font-size: 12px; color: var(--text-muted); margin-top: -10px;">Connecting to cloud database...</p>
                 <div class="notes-container">
                     <textarea id="noteText" class="note-input" placeholder="Type a command or snippet..."></textarea>
                     <button class="btn" onclick="saveNote()">Add Note</button>
@@ -216,6 +218,13 @@
     </main>
 
     <script>
+        // --- 1. CONFIGURATION ---
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // Replace with your Project URL
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your Anon Key
+
+        // Initialize Supabase Client
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         // Simple search functionality
         function filterCheatsheet() {
             const query = document.getElementById('search').value.toLowerCase();
@@ -231,26 +240,36 @@
             });
         }
 
-        // LocalStorage Note Management
-        document.addEventListener("DOMContentLoaded", loadNotes);
-
-        function saveNote() {
-            const input = document.getElementById('noteText');
-            const noteContent = input.value.trim();
-            if (!noteContent) return;
-
-            let notes = JSON.parse(localStorage.getItem('my_cheatsheet_notes')) || [];
-            notes.push({ id: Date.now(), text: noteContent });
-            localStorage.setItem('my_cheatsheet_notes', JSON.stringify(notes));
-            
-            input.value = '';
+        // --- 2. CLOUD DATABASE INTERACTIONS ---
+        document.addEventListener("DOMContentLoaded", () => {
+            if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+                updateStatus('Configuration needed. Replace API keys in the code.', 'var(--danger)');
+                return;
+            }
             loadNotes();
+        });
+
+        function updateStatus(text, color = 'var(--text-muted)') {
+            const statusText = document.getElementById('status');
+            statusText.innerText = text;
+            statusText.style.color = color;
         }
 
-        function loadNotes() {
+        async function loadNotes() {
+            updateStatus('Syncing...');
+            const { data: notes, error } = await supabase
+                .from('notes')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error(error);
+                updateStatus('Error loading notes.', 'var(--danger)');
+                return;
+            }
+
             const list = document.getElementById('notesList');
             list.innerHTML = '';
-            const notes = JSON.parse(localStorage.getItem('my_cheatsheet_notes')) || [];
             
             notes.forEach(note => {
                 const noteDiv = document.createElement('div');
@@ -261,13 +280,43 @@
                 `;
                 list.appendChild(noteDiv);
             });
+
+            updateStatus('All notes synced with cloud.', 'var(--success)');
         }
 
-        function deleteNote(id) {
-            let notes = JSON.parse(localStorage.getItem('my_cheatsheet_notes')) || [];
-            notes = notes.filter(note => note.id !== id);
-            localStorage.setItem('my_cheatsheet_notes', JSON.stringify(notes));
-            loadNotes();
+        async function saveNote() {
+            const input = document.getElementById('noteText');
+            const noteContent = input.value.trim();
+            if (!noteContent) return;
+
+            updateStatus('Saving...');
+            const { error } = await supabase
+                .from('notes')
+                .insert([{ text: noteContent }]);
+
+            if (error) {
+                console.error(error);
+                updateStatus('Error saving note.', 'var(--danger)');
+                return;
+            }
+            
+            input.value = '';
+            await loadNotes();
+        }
+
+        async function deleteNote(id) {
+            updateStatus('Deleting...');
+            const { error } = await supabase
+                .from('notes')
+                .delete()
+                .eq('id', id);
+
+            if (error) {
+                console.error(error);
+                updateStatus('Error deleting note.', 'var(--danger)');
+                return;
+            }
+            await loadNotes();
         }
 
         function escapeHTML(str) {
